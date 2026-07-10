@@ -11,8 +11,8 @@
   }, { passive: true });
 
   /* ── Mobile menu ── */
-  var mm     = document.getElementById('mm');
-  var mmbd   = document.getElementById('mm-bd');
+  var mm = document.getElementById('mm');
+  var mmbd = document.getElementById('mm-bd');
   var burger = document.querySelector('.burger');
 
   function openMenu() {
@@ -77,18 +77,18 @@
   var cform = document.querySelector('.cform');
   if (cform) {
     var SERVICE_LABELS = {
-      asphalt:  'アスファルト舗装',
-      carport:  'カーポート',
-      turf:     '人工芝・植栽',
-      garden:   '花壇・お庭づくり',
-      fence:    'フェンス・門まわり',
+      asphalt: 'アスファルト舗装',
+      carport: 'カーポート',
+      turf: '人工芝・植栽',
+      garden: '花壇・お庭づくり',
+      fence: 'フェンス・門まわり',
       concrete: '土間コンクリート',
-      deck:     'デッキ・テラス',
-      other:    'その他・外構全般'
+      deck: 'デッキ・テラス',
+      other: 'その他・外構全般'
     };
 
     var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    var TEL_RE   = /^[\d\-\+\(\)\s]{10,}$/;
+    var TEL_RE = /^[\d\-\+\(\)\s]{10,}$/;
 
     function clearErrors() {
       cform.querySelectorAll('.form-error').forEach(function (el) { el.remove(); });
@@ -115,26 +115,26 @@
       e.preventDefault();
       clearErrors();
 
-      var name    = document.getElementById('name');
-      var tel     = document.getElementById('tel');
-      var email   = document.getElementById('email');
+      var name = document.getElementById('name');
+      var tel = document.getElementById('tel');
+      var email = document.getElementById('email');
       var message = document.getElementById('message');
       var service = document.getElementById('service');
       var company = document.getElementById('company');
       var privacy = cform.querySelector('input[name="privacy"]');
 
       var ok = true;
-      if (!name.value.trim())                       { addError(name,    'お名前を入力してください');                 ok = false; }
-      if (!tel.value.trim())                        { addError(tel,     '電話番号を入力してください');               ok = false; }
-      else if (!TEL_RE.test(tel.value.trim()))      { addError(tel,     '正しい電話番号を入力してください');         ok = false; }
-      if (!email.value.trim())                      { addError(email,   'メールアドレスを入力してください');         ok = false; }
-      else if (!EMAIL_RE.test(email.value.trim()))  { addError(email,   '正しいメールアドレスを入力してください'); ok = false; }
-      if (!message.value.trim())                    { addError(message, 'お問い合わせ内容を入力してください');       ok = false; }
-      if (!privacy.checked)                         { addCheckError('プライバシーポリシーに同意していません');       ok = false; }
+      if (!name.value.trim()) { addError(name, 'お名前を入力してください'); ok = false; }
+      if (!tel.value.trim()) { addError(tel, '電話番号を入力してください'); ok = false; }
+      else if (!TEL_RE.test(tel.value.trim())) { addError(tel, '正しい電話番号を入力してください'); ok = false; }
+      if (!email.value.trim()) { addError(email, 'メールアドレスを入力してください'); ok = false; }
+      else if (!EMAIL_RE.test(email.value.trim())) { addError(email, '正しいメールアドレスを入力してください'); ok = false; }
+      if (!message.value.trim()) { addError(message, 'お問い合わせ内容を入力してください'); ok = false; }
+      if (!privacy.checked) { addCheckError('プライバシーポリシーに同意していません'); ok = false; }
 
       if (!ok) return;
 
-      var endpoint  = cform.getAttribute('action');
+      var endpoint = cform.getAttribute('action');
       var submitBtn = cform.querySelector('.fsub');
       var serviceLabel = service.value ? (SERVICE_LABELS[service.value] || service.value) : '未選択';
 
@@ -142,10 +142,10 @@
         var body = [
           'growth株式会社 お問い合わせフォームより',
           '',
-          '【お名前】'           + name.value.trim(),
-          '【会社名・屋号】'     + (company.value.trim() || 'なし'),
-          '【電話番号】'         + tel.value.trim(),
-          '【メールアドレス】'   + email.value.trim(),
+          '【お名前】' + name.value.trim(),
+          '【会社名・屋号】' + (company.value.trim() || 'なし'),
+          '【電話番号】' + tel.value.trim(),
+          '【メールアドレス】' + email.value.trim(),
           '【ご相談内容の種類】' + serviceLabel,
           '',
           '【お問い合わせ内容】',
@@ -154,7 +154,7 @@
         window.location.href =
           'mailto:growth-0715@outlook.jp' +
           '?subject=' + encodeURIComponent('【growth】お問い合わせ') +
-          '&body='    + encodeURIComponent(body);
+          '&body=' + encodeURIComponent(body);
         return;
       }
 
@@ -165,34 +165,34 @@
         method: 'POST',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name:    name.value.trim(),
+          name: name.value.trim(),
           company: company.value.trim(),
-          tel:     tel.value.trim(),
-          email:   email.value.trim(),
+          tel: tel.value.trim(),
+          email: email.value.trim(),
           service: serviceLabel,
           message: message.value.trim(),
         })
       })
-      .then(function (res) {
-        if (res.ok) {
-          var success = document.createElement('div');
-          success.className = 'form-success';
-          success.innerHTML =
-            '<div class="fs-icon">✓</div>' +
-            '<h3>送信が完了しました</h3>' +
-            '<p>2営業日以内にご連絡いたします。</p>';
-          cform.replaceWith(success);
-        } else {
+        .then(function (res) {
+          if (res.ok) {
+            var success = document.createElement('div');
+            success.className = 'form-success';
+            success.innerHTML =
+              '<div class="fs-icon">✓</div>' +
+              '<h3>送信が完了しました</h3>' +
+              '<p>2営業日以内にご連絡いたします。</p>';
+            cform.replaceWith(success);
+          } else {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '送信する';
+            alert('送信に失敗しました。お手数ですが、お電話にてご連絡ください。');
+          }
+        })
+        .catch(function () {
           submitBtn.disabled = false;
           submitBtn.textContent = '送信する';
           alert('送信に失敗しました。お手数ですが、お電話にてご連絡ください。');
-        }
-      })
-      .catch(function () {
-        submitBtn.disabled = false;
-        submitBtn.textContent = '送信する';
-        alert('送信に失敗しました。お手数ですが、お電話にてご連絡ください。');
-      });
+        });
     });
   }
 
