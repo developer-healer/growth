@@ -1,0 +1,239 @@
+name: Deploy Website
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - destroy
+
+env:
+  AWS_REGION: ap-northeast-1
+
+jobs:
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.action == 'deploy'
+    outputs:
+      bucket-name: ${{ steps.get-outputs.outputs.bucket-name }}
+      cloudfront-id: ${{ steps.get-outputs.outputs.cloudfront-id }}
+      cloudfront-domain: ${{ steps.get-outputs.outputs.cloudfront-domain }}
+      website-url: ${{ steps.get-outputs.outputs.website-url }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set stack name
+      id: set-stack-name
+      run: |
+        REPO_NAME="${{ github.event.repository.name }}"
+        REPO_NAME_LOWER=$(echo "$REPO_NAME" | tr '[:upper:]' '[:lower:]')
+        echo "STACK_NAME=${REPO_NAME_LOWER}-prod" >> $GITHUB_ENV
+        echo "REPO_NAME_LOWER=${REPO_NAME_LOWER}" >> $GITHUB_ENV
+        echo "Stack name set to: ${REPO_NAME_LOWER}-prod"
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Deploy CloudFormation stack
+      run: |
+        echo "🚀 Deploying CloudFormation stack..."
+        aws cloudformation deploy \
+          --template-file infrastructure/website.yaml \
+          --stack-name ${{ env.STACK_NAME }} \
+          --parameter-overrides \
+            ProjectName=${{ env.REPO_NAME_LOWER }} \
+            Environment=prod \
+          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+          --no-fail-on-empty-changeset \
+          --tags \
+            Project=${{ env.REPO_NAME_LOWER }} \
+            Environment=prod \
+            ManagedBy=github-actions
+            
+    - name: Get stack outputs
+      id: get-outputs
+      run: |
+        echo "📋 Getting stack outputs..."
+        BUCKET_NAME=$(aws cloudformation describe-stacks \
+          --stack-name ${{ env.STACK_NAME }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`WebsiteBucketName`].OutputValue' \
+          --output text)
+        
+        CLOUDFRONT_ID=$(aws cloudformation describe-stacks \
+          --stack-name ${{ env.STACK_NAME }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' \
+          --output text)
+          
+        CLOUDFRONT_DOMAIN=$(aws cloudformation describe-stacks \
+          --stack-name ${{ env.STACK_NAME }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionDomainName`].OutputValue' \
+          --output text)
+          
+        WEBSITE_URL=$(aws cloudformation describe-stacks \
+          --stack-name ${{ env.STACK_NAME }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontURL`].OutputValue' \
+          --output text)
+        
+        echo "bucket-name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+        echo "cloudfront-id=$CLOUDFRONT_ID" >> $GITHUB_OUTPUT  
+        echo "cloudfront-domain=$CLOUDFRONT_DOMAIN" >> $GITHUB_OUTPUT
+        echo "website-url=$WEBSITE_URL" >> $GITHUB_OUTPUT
+        
+        echo "✅ Stack outputs:"
+        echo "   S3 Bucket: $BUCKET_NAME"
+        echo "   CloudFront ID: $CLOUDFRONT_ID"
+        echo "   CloudFront Domain: $CLOUDFRONT_DOMAIN"
+        echo "   Website URL: $WEBSITE_URL"
+
+  deploy-website:
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    if: github.event_name == 'push' || github.event.inputs.action == 'deploy'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Sync files to S3
+      run: |
+        echo "📦 Syncing files to S3..."
+        aws s3 sync . s3://${{ needs.deploy-infrastructure.outputs.bucket-name }} \
+          --exclude ".git/*" \
+          --exclude ".github/*" \
+          --exclude "infrastructure/*" \
+          --exclude "*.md" \
+          --exclude ".claude/*" \
+          --exclude "*setup*" \
+          --exclude "*sample*" \
+          --delete \
+          --cache-control "public, max-age=31536000" \
+          --metadata-directive REPLACE
+          
+    - name: Set specific cache headers
+      run: |
+        echo "🏷️  Setting specific cache headers..."
+        
+        # HTML files - short cache
+        for html_file in $(aws s3 ls s3://${{ needs.deploy-infrastructure.outputs.bucket-name }} --recursive | grep '\.html$' | awk '{print $4}'); do
+          aws s3 cp s3://${{ needs.deploy-infrastructure.outputs.bucket-name }}/$html_file \
+            s3://${{ needs.deploy-infrastructure.outputs.bucket-name }}/$html_file \
+            --metadata-directive REPLACE \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "public, max-age=300"
+        done
+          
+        # CSS files - longer cache
+        for css_file in $(aws s3 ls s3://${{ needs.deploy-infrastructure.outputs.bucket-name }} --recursive | grep '\.css$' | awk '{print $4}'); do
+          aws s3 cp s3://${{ needs.deploy-infrastructure.outputs.bucket-name }}/$css_file \
+            s3://${{ needs.deploy-infrastructure.outputs.bucket-name }}/$css_file \
+            --metadata-directive REPLACE \
+            --content-type "text/css; charset=utf-8" \
+            --cache-control "public, max-age=86400"
+        done
+        
+        # JS files - longer cache
+        for js_file in $(aws s3 ls s3://${{ needs.deploy-infrastructure.outputs.bucket-name }} --recursive | grep '\.js$' | awk '{print $4}'); do
+          aws s3 cp s3://${{ needs.deploy-infrastructure.outputs.bucket-name }}/$js_file \
+            s3://${{ needs.deploy-infrastructure.outputs.bucket-name }}/$js_file \
+            --metadata-directive REPLACE \
+            --content-type "application/javascript; charset=utf-8" \
+            --cache-control "public, max-age=86400"
+        done
+        
+    - name: Invalidate CloudFront
+      run: |
+        echo "🔄 Invalidating CloudFront cache..."
+        INVALIDATION_ID=$(aws cloudfront create-invalidation \
+          --distribution-id ${{ needs.deploy-infrastructure.outputs.cloudfront-id }} \
+          --paths "/*" \
+          --query 'Invalidation.Id' \
+          --output text)
+        
+        echo "⏳ Waiting for CloudFront invalidation to complete..."
+        aws cloudfront wait invalidation-completed \
+          --distribution-id ${{ needs.deploy-infrastructure.outputs.cloudfront-id }} \
+          --id $INVALIDATION_ID
+        
+        echo "✅ CloudFront cache invalidated successfully!"
+        
+    - name: Deployment summary
+      run: |
+        echo "🎉 Deployment completed successfully!"
+        echo ""
+        echo "📊 Deployment Summary:"
+        echo "======================"
+        echo "🌐 Website URL: ${{ needs.deploy-infrastructure.outputs.website-url }}"
+        echo "📦 S3 Bucket: ${{ needs.deploy-infrastructure.outputs.bucket-name }}"
+        echo "☁️  CloudFront: ${{ needs.deploy-infrastructure.outputs.cloudfront-domain }}"
+        echo "🔄 Cache: Invalidated"
+        echo ""
+        echo "ℹ️  Note: Changes may take a few minutes to propagate globally."
+
+  destroy-infrastructure:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'destroy'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set stack name
+      id: set-stack-name
+      run: |
+        REPO_NAME="${{ github.event.repository.name }}"
+        REPO_NAME_LOWER=$(echo "$REPO_NAME" | tr '[:upper:]' '[:lower:]')
+        echo "STACK_NAME=${REPO_NAME_LOWER}-prod" >> $GITHUB_ENV
+        echo "REPO_NAME_LOWER=${REPO_NAME_LOWER}" >> $GITHUB_ENV
+        echo "Stack name set to: ${REPO_NAME_LOWER}-prod"
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Empty S3 bucket
+      run: |
+        echo "🗑️  Emptying S3 bucket..."
+        BUCKET_NAME=$(aws cloudformation describe-stacks \
+          --stack-name ${{ env.STACK_NAME }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`WebsiteBucketName`].OutputValue' \
+          --output text 2>/dev/null || echo "")
+        
+        if [ ! -z "$BUCKET_NAME" ]; then
+          aws s3 rm s3://$BUCKET_NAME --recursive
+          echo "✅ S3 bucket emptied"
+        else
+          echo "ℹ️  No bucket found or stack doesn't exist"
+        fi
+        
+    - name: Delete CloudFormation stack
+      run: |
+        echo "🗑️  Deleting CloudFormation stack..."
+        aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}
+        
+        echo "⏳ Waiting for stack deletion to complete..."
+        aws cloudformation wait stack-delete-complete --stack-name ${{ env.STACK_NAME }}
+        
+        echo "✅ Infrastructure destroyed successfully!"
